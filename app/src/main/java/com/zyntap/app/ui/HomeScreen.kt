@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -37,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -212,6 +214,7 @@ private fun AppTile(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val badge by animateFloatAsState(if (editMode) 1f else 0f, label = "minus-badge")
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
@@ -228,19 +231,21 @@ private fun AppTile(
                     .align(Alignment.Center)
                     .clip(RoundedCornerShape(14.dp)),
             )
-            AnimatedVisibility(
-                visible = editMode,
-                modifier = Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-4).dp),
-                enter = fadeIn() + scaleIn(initialScale = 0.4f),
-                exit = fadeOut() + scaleOut(targetScale = 0.4f),
-            ) {
+            if (badge > 0.01f) {
                 Box(
                     modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-4).dp)
+                        .graphicsLayer {
+                            scaleX = badge
+                            scaleY = badge
+                            alpha = badge
+                        }
                         .size(24.dp)
                         .background(Zyn.Danger, CircleShape)
                         .border(2.dp, Zyn.Surface, CircleShape)
                         .clip(CircleShape)
-                        .clickable(onClick = onRemove),
+                        .clickable(enabled = editMode, onClick = onRemove),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Lucide.Minus, contentDescription = "Bỏ ${app.label}", tint = Color.White, modifier = Modifier.size(14.dp))
