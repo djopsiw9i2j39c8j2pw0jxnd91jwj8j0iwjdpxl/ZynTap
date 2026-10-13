@@ -66,7 +66,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var pairedPersisted by mutableStateOf(AdbLinkStore.isPaired(app))
         private set
 
+    /** Từng ghép nối thành công (khoá đã được máy ghi nhận). */
     val isPaired: Boolean get() = pairState is PairState.Success || pairedPersisted
+
+    /** Đang dùng được: đã ghép nối VÀ gỡ lỗi Wi-Fi đang bật. */
+    val isActive: Boolean get() = isPaired && wifiAdbOn
 
     init {
         viewModelScope.launch {
@@ -74,12 +78,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 repo.loadPinned().mapNotNull { repo.resolve(it) }
             }
         }
-        // Tự kết nối lại mỗi khi người dùng bật lại gỡ lỗi Wi-Fi
-        WifiAdbMonitor.onChanged = { enabled, port ->
+        // Theo dõi bật/tắt gỡ lỗi Wi-Fi (tắt Wi-Fi thì hệ thống cũng tự tắt gỡ lỗi Wi-Fi).
+        // Chỉ cập nhật trạng thái bật/tắt — "đã ghép nối" chỉ được đặt khi ghép nối thật thành công.
+        WifiAdbMonitor.onChanged = { enabled, _ ->
             wifiAdbOn = enabled
-            if (enabled && port != null) {
-                pairedPersisted = true
-            }
         }
         WifiAdbMonitor.start(app)
         // Nếu gỡ lỗi Wi-Fi đang bật sẵn thì dò cổng kết nối ngay
@@ -88,7 +90,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val port = WifiAdbMonitor.discoverConnectPort(app)
                 if (port != null) {
                     AdbLinkStore.saveConnectPort(app, port)
-                    pairedPersisted = true
                 }
             }
         }
