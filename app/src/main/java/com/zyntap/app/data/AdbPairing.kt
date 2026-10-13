@@ -25,12 +25,11 @@ interface AdbPairing {
 }
 
 /**
- * Ghép nối THẬT với "Gỡ lỗi không dây" (Android 11+), làm đúng cách hệ thống:
+ * Ghép nối THẬT với "Gỡ lỗi không dây" (Android 11+):
  *  1. Dò dịch vụ `_adb-tls-pairing._tcp` qua mDNS (NSD) — dịch vụ này chỉ phát
  *     khi bảng "Ghép nối thiết bị bằng mã ghép nối" còn mở.
- *  2. TLS 1.3 + SPAKE2 (mật khẩu = mã 6 số) qua libadb-android + Conscrypt.
- *  3. Gửi khoá công khai của ZynTap để adbd ghi nhận (làm trong ZynAdb).
- *  4. Pair xong thì dò cổng `_adb-tls-connect._tcp` để lưu lại cho lần kết nối sau.
+ *  2. Giao việc bắt tay (SPAKE2 trên TLS 1.3) + gửi khoá cho libadb-android.
+ *  3. Pair xong thì dò cổng `_adb-tls-connect._tcp` để lưu lại cho lần kết nối sau.
  */
 @RequiresApi(Build.VERSION_CODES.R)
 class WifiAdbPairing(private val context: Context) : AdbPairing {
@@ -55,14 +54,15 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
                 return@withContext Result.failure(IllegalStateException("Không đọc được cổng ghép nối."))
             }
 
-            // Bước 2 + 3: ghép nối thật bằng mã 6 số
+            // Bước 2: ghép nối bằng mã 6 số (libadb-android lo phần SPAKE2/TLS)
             val address = host.hostAddress
                 ?: return@withContext Result.failure(
                     IllegalStateException("Địa chỉ dịch vụ ghép nối không hợp lệ."),
                 )
-            pairOverTls(address, port, code)
+            val manager = ZynAdbConnectionManager.get(context)
+            manager.pair(address, port, code)
 
-            // Bước 4: lấy cổng kết nối để lưu lại (dùng cho lần kết nối sau)
+            // Bước 3: lấy cổng kết nối để lưu lại (dùng cho lần kết nối sau)
             runCatching {
                 val conn = discoverService(nsd, SERVICE_CONNECT, CONNECT_TIMEOUT_MS)
                 conn.port.takeIf { it > 0 }?.let { AdbLinkStore.saveConnectPort(context, it) }
@@ -79,15 +79,6 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
         } finally {
             runCatching { lock?.release() }
         }
-    }
-
-    /**
-     * Ghép nối bằng thư viện libadb-android: TLS 1.3 + SPAKE2 (mật khẩu = mã 6 số)
-     * rồi gửi khoá công khai của ZynTap cho adbd — đúng giao thức thật của Android.
-     */
-    private fun pairOverTls(host: String, port: Int, code: String) {
-        val ok = ZynAdb.manager(context).pair(host, port, code)
-        if (!ok) throw IllegalStateException("Máy từ chối mã ghép nối.")
     }
 
     private fun pickHost(info: NsdServiceInfo): InetAddress? {
@@ -140,6 +131,7 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
     companion object {
         const val SERVICE_PAIRING = "_adb-tls-pairing._tcp."
         const val SERVICE_CONNECT = "_adb-tls-connect._tcp."
+
 
         private const val PAIR_TIMEOUT_MS = 20_000L
         private const val CONNECT_TIMEOUT_MS = 10_000L
