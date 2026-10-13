@@ -12,9 +12,9 @@ App Android viết bằng Kotlin + Jetpack Compose. Build APK hoàn toàn trên 
 
 ## Đổi phiên bản (cập nhật không phải gỡ cài lại)
 
-Phiên bản mặc định: **1.00.01**. Có 3 cách đổi:
+Phiên bản mặc định: **1.00.02**. Có 3 cách đổi:
 
-- Sửa dòng `appVersion=1.00.01` trong `gradle.properties`, rồi đẩy code lên.
+- Sửa dòng `appVersion=1.00.02` trong `gradle.properties`, rồi đẩy code lên.
 - Vào Actions → **Run workflow** → gõ phiên bản (vd `1.00.02`).
 - Tạo tag `v1.00.02` → bản APK sẽ tự đăng ở mục **Releases**.
 
