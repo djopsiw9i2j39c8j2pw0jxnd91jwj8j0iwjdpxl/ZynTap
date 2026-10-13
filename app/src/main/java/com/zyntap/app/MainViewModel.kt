@@ -125,6 +125,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openActivate() {
         editMode = false
         screen = Screen.Pair
+        if (!isActive) show("Nhập mã 6 số đang hiện trong mục Ghép nối bằng mã")
     }
 
     fun back() {
