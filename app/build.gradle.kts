@@ -68,7 +68,6 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        resources.excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
     }
 }
 
@@ -87,10 +86,6 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
 
-    // Ghép nối + kết nối ADB Wi-Fi thật (TLS 1.3 + SPAKE2)
-    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
-    // Tạo chứng chỉ X509 cho khoá ADB
-    implementation("com.github.MuntashirAkon:sun-security-android:1.1")
-    // TLS 1.3 (Conscrypt của Google) — libadb tự nhận khi có trên classpath
-    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    // TLS (Conscrypt của Google) — cần cho ghép nối ADB Wi-Fi bằng TLS-PSK
+    implementation("org.conscrypt:conscrypt-android:2.5.2")
 }
