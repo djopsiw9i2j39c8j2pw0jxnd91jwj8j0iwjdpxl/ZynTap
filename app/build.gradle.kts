@@ -7,7 +7,7 @@ plugins {
 // ---- Phiên bản -------------------------------------------------------------
 // Lấy từ gradle.properties (appVersion) hoặc từ dòng lệnh: -PappVersion=1.00.02
 val appVersionName: String = (project.findProperty("appVersion") as String?)?.trim().orEmpty()
-    .ifEmpty { "1.00.03" }
+    .ifEmpty { "1.00.04" }
 
 // "1.00.01" -> 1_000_001 ; "1.02.10" -> 1_002_010 (luôn tăng khi version tăng)
 fun versionCodeFrom(name: String): Int {
@@ -68,6 +68,9 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // bcprov + bcpkix cùng có các file này -> loại bớt để khỏi báo trùng
+        resources.excludes += "/META-INF/versions/**/OSGI-INF/MANIFEST.MF"
+        resources.excludes += "/META-INF/*.{SF,DSA,RSA,EC}"
     }
 }
 
@@ -86,6 +89,10 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
 
-    // TLS (Conscrypt của Google) — cần cho ghép nối ADB Wi-Fi bằng TLS-PSK
-    implementation("org.conscrypt:conscrypt-android:2.5.2")
+    // Ghép nối + kết nối ADB Wi-Fi (SPAKE2 trên TLS 1.3) — thay cho code tự viết
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    // TLS (Conscrypt của Google) — libadb cần để lấy keying material của TLS 1.3
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    // Tạo chứng chỉ X.509 tự ký (cùng dòng bcprov-jdk15to18:1.81 mà libadb dùng)
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 }
