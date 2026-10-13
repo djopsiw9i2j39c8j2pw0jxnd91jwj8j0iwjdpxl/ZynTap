@@ -117,6 +117,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Đọc lại trạng thái ghép nối (có thể vừa được ghép nối từ thông báo khi app ở nền). */
+    fun refreshPairing() {
+        pairedPersisted = AdbLinkStore.isPaired(getApplication<Application>())
+        wifiAdbOn = WifiAdbMonitor.isWifiAdbEnabled(getApplication<Application>())
+    }
+
     fun refreshOverlayPermission() {
         overlayGranted = OverlayPermission.granted(getApplication<Application>())
     }
