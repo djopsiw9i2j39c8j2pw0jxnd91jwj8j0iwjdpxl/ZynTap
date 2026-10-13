@@ -64,7 +64,10 @@ fun ZynTapApp(vm: MainViewModel = viewModel()) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) vm.refreshOverlayPermission()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                vm.refreshOverlayPermission()
+                vm.refreshPairing()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
