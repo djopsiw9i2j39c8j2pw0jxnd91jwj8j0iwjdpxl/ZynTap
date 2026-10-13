@@ -1,15 +1,8 @@
 package com.zyntap.app.ui
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,9 +56,13 @@ fun HomeScreen(vm: MainViewModel) {
                 .padding(horizontal = 20.dp)
                 .padding(top = 8.dp, bottom = 16.dp),
         ) {
-            StatusCard(paired = vm.isPaired, onClick = vm::openActivate)
+            StatusCard(paired = vm.isPaired, wifiAdbOn = vm.wifiAdbOn, onClick = vm::openActivate)
             Spacer(Modifier.height(14.dp))
             ActivateButton(onClick = vm::openActivate)
+            if (!vm.overlayGranted) {
+                Spacer(Modifier.height(12.dp))
+                OverlayPermissionCard(onClick = vm::requestOverlayPermission)
+            }
             Spacer(Modifier.height(18.dp))
             AppsCard(vm)
         }
@@ -83,7 +80,7 @@ fun HomeScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun StatusCard(paired: Boolean, onClick: () -> Unit) {
+private fun StatusCard(paired: Boolean, wifiAdbOn: Boolean, onClick: () -> Unit) {
     val dot by animateColorAsState(if (paired) Zyn.Ok else Zyn.Warn, label = "status-dot")
     val shape = RoundedCornerShape(16.dp)
     Row(
@@ -101,7 +98,11 @@ private fun StatusCard(paired: Boolean, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("Gỡ lỗi Wi-Fi", color = Zyn.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text(
-                text = if (paired) "Đã ghép nối" else "Chưa ghép nối",
+                text = when {
+                    paired -> "Đã ghép nối"
+                    wifiAdbOn -> "Gỡ lỗi Wi-Fi đang bật — chưa ghép nối"
+                    else -> "Chưa ghép nối"
+                },
                 color = Zyn.TextDim,
                 fontSize = 13.sp,
             )
@@ -137,6 +138,34 @@ private fun ActivateButton(onClick: () -> Unit) {
         ) {
             Icon(Lucide.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
         }
+    }
+}
+
+/** Thẻ nhỏ xin quyền "hiển thị trên ứng dụng khác" để menu nổi vẽ được. */
+@Composable
+private fun OverlayPermissionCard(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Zyn.Surface)
+            .border(1.dp, Zyn.Border, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Menu nổi", color = Zyn.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = "Cấp quyền hiển thị trên ứng dụng khác để menu hiện lên app bạn mở",
+                color = Zyn.TextDim,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Icon(Lucide.ChevronRight, contentDescription = null, tint = Zyn.TextDim, modifier = Modifier.size(20.dp))
     }
 }
 
