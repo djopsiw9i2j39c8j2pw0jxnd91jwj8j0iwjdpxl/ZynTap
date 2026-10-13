@@ -1,16 +1,22 @@
 package com.zyntap.app
 
 import android.app.Application
+import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.zyntap.app.data.AdbLinkStore
 import com.zyntap.app.data.AdbPairing
 import com.zyntap.app.data.AppEntry
 import com.zyntap.app.data.AppRepository
 import com.zyntap.app.data.PairState
 import com.zyntap.app.data.PendingAdbPairing
+import com.zyntap.app.data.WifiAdbMonitor
+import com.zyntap.app.data.WifiAdbPairing
+import com.zyntap.app.overlay.OverlayPermission
+import com.zyntap.app.overlay.OverlayService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -21,7 +27,8 @@ enum class Screen { Home, Pair }
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = AppRepository(app)
-    private val pairing: AdbPairing = PendingAdbPairing()
+    private val pairing: AdbPairing =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) WifiAdbPairing(app) else PendingAdbPairing()
 
     var screen by mutableStateOf(Screen.Home)
         private set
@@ -47,7 +54,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var messageVisible by mutableStateOf(false)
         private set
 
-    val isPaired: Boolean get() = pairState is PairState.Success
+    /** Quyền vẽ đè lên app khác (menu nổi). */
+    var overlayGranted by mutableStateOf(OverlayPermission.granted(app))
+        private set
+
+    /** Trạng thái "gỡ lỗi Wi-Fi đang bật" trên máy. */
+    var wifiAdbOn by mutableStateOf(WifiAdbMonitor.isWifiAdbEnabled(app))
+        private set
+
+    /** Đã ghép nối thành công (trong phiên hoặc từ lần trước). */
+    var pairedPersisted by mutableStateOf(AdbLinkStore.isPaired(app))
+        private set
+
+    val isPaired: Boolean get() = pairState is PairState.Success || pairedPersisted
 
     init {
         viewModelScope.launch {
@@ -55,6 +74,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 repo.loadPinned().mapNotNull { repo.resolve(it) }
             }
         }
+        // Tự kết nối lại mỗi khi người dùng bật lại gỡ lỗi Wi-Fi
+        WifiAdbMonitor.onChanged = { enabled, port ->
+            wifiAdbOn = enabled
+            if (enabled && port != null) {
+                pairedPersisted = true
+            }
+        }
+        WifiAdbMonitor.start(app)
+        // Nếu gỡ lỗi Wi-Fi đang bật sẵn thì dò cổng kết nối ngay
+        if (WifiAdbMonitor.isWifiAdbEnabled(app)) {
+            viewModelScope.launch {
+                val port = WifiAdbMonitor.discoverConnectPort(app)
+                if (port != null) {
+                    AdbLinkStore.saveConnectPort(app, port)
+                    pairedPersisted = true
+                }
+            }
+        }
+    }
+
+    fun refreshOverlayPermission() {
+        overlayGranted = OverlayPermission.granted(getApplication<Application>())
     }
 
     // ---- điều hướng -------------------------------------------------------
@@ -108,7 +149,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun launchApp(entry: AppEntry) {
-        if (!repo.launch(entry.packageName)) show("Không mở được ${entry.label}")
+        val ctx = getApplication<Application>()
+        if (!repo.launch(entry.packageName)) {
+            show("Không mở được ${entry.label}")
+            return
+        }
+        // Mở app đã chọn -> vẽ menu nổi (icon + tên app) lên trên app đó
+        if (OverlayPermission.granted(ctx)) {
+            OverlayService.start(ctx)
+        } else {
+            show("Cấp quyền hiển thị trên ứng dụng khác để dùng menu nổi")
+        }
+    }
+
+    fun requestOverlayPermission() {
+        OverlayPermission.openSettings(getApplication<Application>())
     }
 
     // ---- ghép nối ---------------------------------------------------------
@@ -124,6 +179,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val result = pairing.pair(code)
             if (result.isSuccess) {
                 pairState = PairState.Success
+                AdbLinkStore.setPaired(getApplication<Application>(), true)
+                pairedPersisted = true
                 delay(900)
                 screen = Screen.Home
             } else {
