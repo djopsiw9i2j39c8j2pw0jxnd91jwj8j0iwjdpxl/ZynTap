@@ -45,6 +45,9 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Phiên bản build: $V"
 
+      - name: Cấp quyền chạy cho gradlew
+        run: chmod +x gradlew
+
       - name: Build APK
         run: ./gradlew assembleRelease -PappVersion=${{ steps.ver.outputs.version }} --no-daemon --stacktrace
 
