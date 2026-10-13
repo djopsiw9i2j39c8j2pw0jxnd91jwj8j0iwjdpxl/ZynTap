@@ -23,7 +23,9 @@ import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
+import javax.net.ssl.KeyManager
 import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
 import javax.net.ssl.SSLEngine
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.X509TrustManager
@@ -101,13 +103,14 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
     /** Bắt tay TLS-PSK và trao đổi gói PeerInfo với adbd. */
     private fun pairOverTls(host: String, port: Int, code: String) {
         val sslContext = SSLContext.getInstance("TLSv1.3", Conscrypt.newProvider()).apply {
-            init(null, arrayOf(TrustAll), SecureRandom())
+            // Conscrypt không có Conscrypt.setPSKKeyManager(); PSKKeyManager (là một KeyManager)
+            // được truyền thẳng qua SSLContext.init().
+            init(arrayOf<KeyManager>(PairingPsk(code)), arrayOf<TrustManager>(TrustAll), SecureRandom())
         }
         val socket = sslContext.socketFactory.createSocket() as SSLSocket
         try {
             socket.connect(InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             socket.soTimeout = SOCKET_TIMEOUT_MS
-            Conscrypt.setPSKKeyManager(socket, PairingPsk(code))
             socket.enabledProtocols = arrayOf("TLSv1.3")
             socket.enabledCipherSuites = arrayOf("TLS_PSK_WITH_AES_128_GCM_SHA256")
             socket.startHandshake()
