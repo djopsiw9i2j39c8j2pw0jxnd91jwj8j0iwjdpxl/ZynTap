@@ -125,7 +125,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openActivate() {
         editMode = false
         screen = Screen.Pair
-        if (!isActive) show("Nhập mã 6 số đang hiện trong mục Ghép nối bằng mã")
+        // Gửi thông báo nhắc nhập mã; nếu máy chưa cho phép thông báo thì nhắc bằng dòng chữ trong app
+        if (!isActive && !PairNotifier.showEnterCode(getApplication())) {
+            show("Nhập mã 6 số đang hiện trong mục Ghép nối bằng mã")
+        }
     }
 
     fun back() {
@@ -204,6 +207,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (result.isSuccess) {
                 pairState = PairState.Success
                 AdbLinkStore.setPaired(getApplication<Application>(), true)
+                PairNotifier.cancel(getApplication())
                 pairedPersisted = true
                 delay(900)
                 screen = Screen.Home
