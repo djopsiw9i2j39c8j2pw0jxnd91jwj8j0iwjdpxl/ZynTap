@@ -4,31 +4,30 @@ import android.content.Context
 import android.os.Build
 
 /**
- * Gửi cú chạm thật vào máy bằng lệnh `input tap` qua kết nối ADB Wi-Fi đã ghép nối.
+ * Gửi cú chạm thật vào máy bằng lệnh `input tap x y` qua kết nối ADB Wi-Fi đã ghép nối.
  *
- * CHƯA KIỂM CHỨNG: dùng API libadb-android 3.1.1 (openStream / shell). Chưa build được
- * ở môi trường này, cần xác nhận tên hàm đúng khi build. Mọi lỗi được nuốt và trả false.
+ * CHƯA KIỂM CHỨNG: API libadb-android 3.1.1 (openStream, disconnect) chưa được xác nhận
+ * vì môi trường không tải được thư viện. Cần kiểm tra khi build.
  */
 object AdbInput {
 
-    /** Mở kết nối shell một lần rồi tái sử dụng cho các lần chạm sau. */
     @Volatile
     private var connected = false
 
-    fun tap(context: Context, x: Int, y: Int): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+    /** Trả về null nếu gửi thành công, ngược lại trả về thông báo lỗi để hiện cho người dùng. */
+    fun tap(context: Context, x: Int, y: Int): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return "Cần Android 11 trở lên"
         return try {
             val manager = ZynAdbConnectionManager.get(context)
             if (!connected) {
                 connected = manager.connectTls(context.applicationContext, 8_000L)
             }
-            if (!connected) return false
-            // Lệnh shell trên ADB: input tap <x> <y>
+            if (!connected) return "Chưa kết nối được ADB: kiểm tra Gỡ lỗi Wi-Fi và ghép nối"
             manager.openStream("shell:input tap $x $y").use { _ -> }
-            true
+            null
         } catch (t: Throwable) {
             connected = false
-            false
+            "Gửi cú chạm thất bại: ${t.message ?: t.javaClass.simpleName}"
         }
     }
 
