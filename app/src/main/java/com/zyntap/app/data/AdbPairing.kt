@@ -10,6 +10,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import io.github.muntashirakon.adb.AdbPairingRequiredException
+import java.io.IOException
 import java.net.InetAddress
 
 sealed interface PairState {
@@ -135,6 +137,30 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
 
         private const val PAIR_TIMEOUT_MS = 20_000L
         private const val CONNECT_TIMEOUT_MS = 10_000L
+    }
+}
+
+/**
+ * Kiểm tra máy còn nhớ khoá của app không (ví dụ người dùng đã xoá ZynTap khỏi
+ * "Thiết bị đã ghép nối"). Thử kết nối ADB TLS thật:
+ *  - true  : kết nối được -> còn ghép nối
+ *  - false : máy từ chối khoá (cần ghép nối lại)
+ *  - null  : không xác định (hết thời gian, mất mạng, ...)
+ */
+@RequiresApi(Build.VERSION_CODES.R)
+fun checkStillPaired(context: Context, timeoutMs: Long = 8_000L): Boolean? {
+    val manager = ZynAdbConnectionManager.get(context)
+    return try {
+        val ok = manager.connectTls(context.applicationContext, timeoutMs)
+        runCatching { manager.disconnect() }
+        if (ok) true else null
+    } catch (e: AdbPairingRequiredException) {
+        false
+    } catch (e: IOException) {
+        // libadb báo "Connection failed" khi bắt tay TLS bị máy từ chối
+        if (e.message == "Connection failed") false else null
+    } catch (t: Throwable) {
+        null
     }
 }
 
