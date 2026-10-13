@@ -33,8 +33,8 @@ Phiên bản mặc định: **1.00.02**. Có 3 cách đổi:
 Đã có: giao diện, logo/icon, tab hướng dẫn + nhập mã 6 số, chế độ chọn app (thêm/bỏ, lưu lại sau khi tắt app),
 phiên bản tuỳ chỉnh.
 
-Chưa có: logic ghép nối gỡ lỗi Wi-Fi thật (nút "Ghép nối" hiện chỉ báo chưa hỗ trợ) và nút menu 3 gạch
-chưa gán chức năng. Chỗ cắm ghép nối thật nằm ở `data/AdbPairing.kt`.
+Ghép nối gỡ lỗi Wi-Fi dùng thư viện libadb-android (SPAKE2 trên TLS 1.3, qua JitPack); khoá ADB lưu
+trong thư mục riêng của app (`data/ZynAdbConnectionManager.kt`). Nút menu 3 gạch chưa gán chức năng.
 
 ## Cấu trúc
 
