@@ -15,6 +15,7 @@ import com.zyntap.app.data.PairState
 import com.zyntap.app.data.PendingAdbPairing
 import com.zyntap.app.data.WifiAdbMonitor
 import com.zyntap.app.data.WifiAdbPairing
+import com.zyntap.app.data.checkStillPaired
 import com.zyntap.app.overlay.OverlayPermission
 import com.zyntap.app.overlay.OverlayService
 import kotlinx.coroutines.Dispatchers
@@ -82,6 +83,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Chỉ cập nhật trạng thái bật/tắt — "đã ghép nối" chỉ được đặt khi ghép nối thật thành công.
         WifiAdbMonitor.onChanged = { enabled, _ ->
             wifiAdbOn = enabled
+            if (enabled) verifyPairing()
         }
         WifiAdbMonitor.start(app)
         // Nếu gỡ lỗi Wi-Fi đang bật sẵn thì dò cổng kết nối ngay
@@ -91,7 +93,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (port != null) {
                     AdbLinkStore.saveConnectPort(app, port)
                 }
+                verifyPairing()
             }
+        }
+    }
+
+    private var verifying = false
+
+    /** Hỏi máy xem còn nhớ khoá đã ghép nối không; nếu máy đã quên thì bỏ trạng thái "đã ghép nối". */
+    fun verifyPairing() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        if (verifying || !isPaired || pairState is PairState.Working) return
+        verifying = true
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val still = withContext(Dispatchers.IO) { checkStillPaired(app) }
+            if (still == false) {
+                AdbLinkStore.setPaired(app, false)
+                pairedPersisted = false
+                pairState = PairState.Idle
+            }
+            verifying = false
         }
     }
 
