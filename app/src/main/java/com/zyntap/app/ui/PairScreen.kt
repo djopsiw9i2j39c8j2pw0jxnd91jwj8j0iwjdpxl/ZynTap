@@ -29,6 +29,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -132,6 +138,15 @@ private fun PairingPanel(vm: MainViewModel) {
     val working = state is PairState.Working
     val canSubmit = vm.code.length == 6 && !working && state !is PairState.Success
 
+    // Mở tới là đặt con trỏ vào ô mã và bật bàn phím, để người dùng nhập luôn
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        delay(400) // chờ màn hình trượt xong rồi mới lấy tiêu điểm
+        runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -146,7 +161,9 @@ private fun PairingPanel(vm: MainViewModel) {
         OutlinedTextField(
             value = vm.code,
             onValueChange = vm::onCode,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(focusRequester),
             singleLine = true,
             enabled = !working,
             textStyle = TextStyle(

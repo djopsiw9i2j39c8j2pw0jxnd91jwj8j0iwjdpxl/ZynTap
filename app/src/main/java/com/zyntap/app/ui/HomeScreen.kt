@@ -64,10 +64,6 @@ fun HomeScreen(vm: MainViewModel) {
             )
             Spacer(Modifier.height(14.dp))
             ActivateButton(onClick = vm::openActivate)
-            if (!vm.overlayGranted) {
-                Spacer(Modifier.height(12.dp))
-                OverlayPermissionCard(onClick = vm::requestOverlayPermission)
-            }
             Spacer(Modifier.height(18.dp))
             AppsCard(vm)
         }
@@ -144,34 +140,6 @@ private fun ActivateButton(onClick: () -> Unit) {
         ) {
             Icon(Lucide.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
         }
-    }
-}
-
-/** Thẻ nhỏ xin quyền "hiển thị trên ứng dụng khác" để menu nổi vẽ được. */
-@Composable
-private fun OverlayPermissionCard(onClick: () -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Zyn.Surface)
-            .border(1.dp, Zyn.Border, shape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text("Menu nổi", color = Zyn.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = "Cấp quyền hiển thị trên ứng dụng khác để menu hiện lên app bạn mở",
-                color = Zyn.TextDim,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Icon(Lucide.ChevronRight, contentDescription = null, tint = Zyn.TextDim, modifier = Modifier.size(20.dp))
     }
 }
 
