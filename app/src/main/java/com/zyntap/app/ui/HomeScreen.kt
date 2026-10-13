@@ -56,7 +56,12 @@ fun HomeScreen(vm: MainViewModel) {
                 .padding(horizontal = 20.dp)
                 .padding(top = 8.dp, bottom = 16.dp),
         ) {
-            StatusCard(paired = vm.isPaired, wifiAdbOn = vm.wifiAdbOn, onClick = vm::openActivate)
+            StatusCard(
+                active = vm.isActive,
+                wasPaired = vm.isPaired,
+                wifiAdbOn = vm.wifiAdbOn,
+                onClick = vm::openActivate,
+            )
             Spacer(Modifier.height(14.dp))
             ActivateButton(onClick = vm::openActivate)
             if (!vm.overlayGranted) {
@@ -80,8 +85,8 @@ fun HomeScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun StatusCard(paired: Boolean, wifiAdbOn: Boolean, onClick: () -> Unit) {
-    val dot by animateColorAsState(if (paired) Zyn.Ok else Zyn.Warn, label = "status-dot")
+private fun StatusCard(active: Boolean, wasPaired: Boolean, wifiAdbOn: Boolean, onClick: () -> Unit) {
+    val dot by animateColorAsState(if (active) Zyn.Ok else Zyn.Warn, label = "status-dot")
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = Modifier
@@ -89,7 +94,7 @@ private fun StatusCard(paired: Boolean, wifiAdbOn: Boolean, onClick: () -> Unit)
             .clip(shape)
             .background(Zyn.Surface)
             .border(1.dp, Zyn.Border, shape)
-            .clickable(enabled = !paired, onClick = onClick)
+            .clickable(enabled = !active, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -99,8 +104,9 @@ private fun StatusCard(paired: Boolean, wifiAdbOn: Boolean, onClick: () -> Unit)
             Text("Gỡ lỗi Wi-Fi", color = Zyn.Text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 text = when {
-                    paired -> "Đã ghép nối"
+                    active -> "Đã ghép nối"
                     wifiAdbOn -> "Gỡ lỗi Wi-Fi đang bật — chưa ghép nối"
+                    wasPaired -> "Gỡ lỗi Wi-Fi đang tắt — bật lại để dùng"
                     else -> "Chưa ghép nối"
                 },
                 color = Zyn.TextDim,
