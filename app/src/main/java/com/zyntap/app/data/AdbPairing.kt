@@ -10,25 +10,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.conscrypt.Conscrypt
-import org.conscrypt.PSKKeyManager
-import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
-import javax.crypto.SecretKey
-import javax.crypto.spec.SecretKeySpec
-import javax.net.ssl.KeyManager
-import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManager
-import javax.net.ssl.SSLEngine
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.X509TrustManager
 
 sealed interface PairState {
     data object Idle : PairState
@@ -46,9 +28,8 @@ interface AdbPairing {
  * Ghép nối THẬT với "Gỡ lỗi không dây" (Android 11+), làm đúng cách hệ thống:
  *  1. Dò dịch vụ `_adb-tls-pairing._tcp` qua mDNS (NSD) — dịch vụ này chỉ phát
  *     khi bảng "Ghép nối thiết bị bằng mã ghép nối" còn mở.
- *  2. Bắt tay TLS 1.3 với PSK (cipher TLS_PSK_WITH_AES_128_GCM_SHA256),
- *     khoá PSK chính là mã 6 số — dùng Conscrypt (TLS của Google).
- *  3. Gửi gói PeerInfo (header "SPCK") để adbd ghi nhận khoá, rồi chờ máy trả lời.
+ *  2. TLS 1.3 + SPAKE2 (mật khẩu = mã 6 số) qua libadb-android + Conscrypt.
+ *  3. Gửi khoá công khai của ZynTap để adbd ghi nhận (làm trong ZynAdb).
  *  4. Pair xong thì dò cổng `_adb-tls-connect._tcp` để lưu lại cho lần kết nối sau.
  */
 @RequiresApi(Build.VERSION_CODES.R)
@@ -74,7 +55,7 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
                 return@withContext Result.failure(IllegalStateException("Không đọc được cổng ghép nối."))
             }
 
-            // Bước 2 + 3: TLS-PSK bằng mã 6 số, gửi PeerInfo, chờ máy xác nhận
+            // Bước 2 + 3: ghép nối thật bằng mã 6 số
             val address = host.hostAddress
                 ?: return@withContext Result.failure(
                     IllegalStateException("Địa chỉ dịch vụ ghép nối không hợp lệ."),
@@ -100,62 +81,13 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
         }
     }
 
-    /** Bắt tay TLS-PSK và trao đổi gói PeerInfo với adbd. */
+    /**
+     * Ghép nối bằng thư viện libadb-android: TLS 1.3 + SPAKE2 (mật khẩu = mã 6 số)
+     * rồi gửi khoá công khai của ZynTap cho adbd — đúng giao thức thật của Android.
+     */
     private fun pairOverTls(host: String, port: Int, code: String) {
-        val sslContext = SSLContext.getInstance("TLSv1.3", Conscrypt.newProvider()).apply {
-            // Conscrypt không có Conscrypt.setPSKKeyManager(); PSKKeyManager (là một KeyManager)
-            // được truyền thẳng qua SSLContext.init().
-            init(arrayOf<KeyManager>(PairingPsk(code)), arrayOf<TrustManager>(TrustAll), SecureRandom())
-        }
-        val socket = sslContext.socketFactory.createSocket() as SSLSocket
-        try {
-            socket.connect(InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
-            socket.soTimeout = SOCKET_TIMEOUT_MS
-            socket.enabledProtocols = arrayOf("TLSv1.3")
-            socket.enabledCipherSuites = arrayOf("TLS_PSK_WITH_AES_128_GCM_SHA256")
-            socket.startHandshake()
-
-            sendPeerInfo(socket)
-            readPeerInfoReply(socket)
-        } finally {
-            runCatching { socket.close() }
-        }
-    }
-
-    /** Gửi PeerInfo (tên thiết bị) theo đúng định dạng AOSP: header "SPCK" + payload. */
-    private fun sendPeerInfo(socket: SSLSocket) {
-        val name = PEER_NAME.toByteArray(Charsets.UTF_8)
-        val payload = ByteArray(1 + name.size)
-        payload[0] = PEER_INFO_DEVICE_NAME
-        System.arraycopy(name, 0, payload, 1, name.size)
-
-        val header = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-            .put(SPCK_MAGIC)
-            .put(PAIRING_VERSION)
-            .put(PACKET_PEER_INFO)
-            .putShort(payload.size.toShort())
-            .array()
-
-        val out = DataOutputStream(socket.getOutputStream())
-        out.write(header)
-        out.write(payload)
-        out.flush()
-    }
-
-    /** Đọc gói PeerInfo trả lời từ máy — có gói này nghĩa là adbd đã ghi nhận ghép nối. */
-    private fun readPeerInfoReply(socket: SSLSocket) {
-        val input = DataInputStream(socket.getInputStream())
-        val header = ByteArray(8)
-        input.readFully(header)
-        val magic = header.copyOfRange(0, 4)
-        if (!magic.contentEquals(SPCK_MAGIC)) {
-            throw IllegalStateException("Máy trả lời sai gói ghép nối.")
-        }
-        val size = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN).getShort(6).toInt() and 0xFFFF
-        if (size in 1..MAX_PEER_INFO) {
-            val payload = ByteArray(size)
-            input.readFully(payload)
-        }
+        val ok = ZynAdb.manager(context).pair(host, port, code)
+        if (!ok) throw IllegalStateException("Máy từ chối mã ghép nối.")
     }
 
     private fun pickHost(info: NsdServiceInfo): InetAddress? {
@@ -205,38 +137,12 @@ class WifiAdbPairing(private val context: Context) : AdbPairing {
         }
     }
 
-    /** Khoá PSK của phiên ghép nối = đúng 6 số người dùng nhập. */
-    private class PairingPsk(code: String) : PSKKeyManager {
-        private val key: SecretKey = SecretKeySpec(code.toByteArray(Charsets.UTF_8), "AES")
-        override fun chooseServerKeyIdentityHint(socket: Socket?): String? = null
-        override fun chooseServerKeyIdentityHint(engine: SSLEngine?): String? = null
-        override fun chooseClientKeyIdentity(identityHint: String?, socket: Socket?): String = ""
-        override fun chooseClientKeyIdentity(identityHint: String?, engine: SSLEngine?): String = ""
-        override fun getKey(identityHint: String?, identity: String?, socket: Socket?): SecretKey = key
-        override fun getKey(identityHint: String?, identity: String?, engine: SSLEngine?): SecretKey = key
-    }
-
-    /** adbd dùng chứng chỉ tự ký nên chấp nhận mọi chứng chỉ phía server. */
-    private object TrustAll : X509TrustManager {
-        override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {}
-        override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {}
-        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-    }
-
     companion object {
         const val SERVICE_PAIRING = "_adb-tls-pairing._tcp."
         const val SERVICE_CONNECT = "_adb-tls-connect._tcp."
 
-        private val SPCK_MAGIC = "SPCK".toByteArray(Charsets.US_ASCII)
-        private const val PAIRING_VERSION: Byte = 1
-        private const val PACKET_PEER_INFO: Byte = 0
-        private const val PEER_INFO_DEVICE_NAME: Byte = 1
-        private const val MAX_PEER_INFO = 8192
-        private const val PEER_NAME = "ZynTap"
-
         private const val PAIR_TIMEOUT_MS = 20_000L
         private const val CONNECT_TIMEOUT_MS = 10_000L
-        private const val SOCKET_TIMEOUT_MS = 10_000
     }
 }
 
