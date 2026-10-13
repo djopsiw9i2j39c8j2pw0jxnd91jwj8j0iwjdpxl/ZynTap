@@ -3,9 +3,10 @@ package com.zyntap.app.overlay
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
-import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 
-/** Bảng màu và các hàm dựng nền dùng chung cho toàn bộ menu nổi (khớp Zyn trong ui/Theme.kt). */
+/** Bảng màu và hàm dựng nền dùng chung cho menu nổi (khớp Zyn trong ui/Theme.kt). */
 internal object OverlayUi {
     const val BG = 0xF20D1524.toInt()
     const val SURFACE = 0xFF142036.toInt()
@@ -34,18 +35,36 @@ internal object OverlayUi {
             if (strokeColor != null && strokePx > 0) setStroke(strokePx, strokeColor)
         }
 
-    /** Hiệu ứng gợn khi chạm, lấy từ hệ thống. */
-    fun ripple(context: Context): android.graphics.drawable.Drawable? {
-        val attrs = intArrayOf(android.R.attr.selectableItemBackground)
-        val ta = context.obtainStyledAttributes(attrs)
-        val d = ta.getDrawable(0)
-        ta.recycle()
-        return d
-    }
-
-    fun View.setBackgroundKeepPadding(d: android.graphics.drawable.Drawable?) {
+    fun android.view.View.setBackgroundKeepPadding(d: android.graphics.drawable.Drawable?) {
         val l = paddingLeft; val t = paddingTop; val r = paddingRight; val b = paddingBottom
         background = d
         setPadding(l, t, r, b)
     }
+}
+
+/**
+ * Cửa sổ nổi mặc định KHÔNG lấy tiêu điểm, nên bàn phím không hiện được.
+ * Khi người dùng chạm vào một ô nhập, dịch vụ sẽ bật lấy tiêu điểm cho cửa sổ menu.
+ */
+internal object OverlayFocus {
+    var listener: ((Boolean) -> Unit)? = null
+
+    fun request(focusable: Boolean) {
+        listener?.invoke(focusable)
+    }
+}
+
+/** Khi ô nhập mất tiêu điểm thì trả cửa sổ về trạng thái không lấy tiêu điểm. */
+internal fun EditText.keyboardAware() {
+    setOnFocusChangeListener { _, focused -> if (!focused) OverlayFocus.request(false) }
+}
+
+/** Chạm một lần là lấy tiêu điểm và bật bàn phím ngay. */
+internal fun EditText.focusWithKeyboard() {
+    OverlayFocus.request(true)
+    postDelayed({
+        requestFocus()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+    }, 80)
 }

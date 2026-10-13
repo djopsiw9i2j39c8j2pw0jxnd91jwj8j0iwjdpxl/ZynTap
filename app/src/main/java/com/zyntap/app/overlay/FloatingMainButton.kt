@@ -13,18 +13,19 @@ import com.zyntap.app.overlay.OverlayUi.setBackgroundKeepPadding
 import kotlin.math.abs
 
 /**
- * Một nút tròn "Main" nổi trên màn hình.
- *  - Khi menu đang mở: kéo để di chuyển nút.
- *  - Khi menu đóng: nhấn / giữ / thả theo chế độ đã chọn để chạy chuỗi điểm.
- *  - passThrough = true: nút trong suốt với chạm (chạm xuyên xuống app bên dưới).
+ * Nút tròn "Main" nổi trên màn hình.
+ *  - Menu đang MỞ rộng (editable): kéo thả để di chuyển nút.
+ *  - Menu đóng/thu gọn: nhấn / giữ / thả theo chế độ để chạy chuỗi điểm.
+ *  - passThrough: chạm xuyên xuống app bên dưới (khi không đang chỉnh sửa).
  */
 class FloatingMainButton(
     private val context: Context,
     private val wm: WindowManager,
     var model: MainButton,
     private val runner: MacroRunner,
-    private val isMenuOpen: () -> Boolean,
+    private val isEditable: () -> Boolean,
     private val onMoved: (MainButton) -> Unit,
+    private val notify: (String) -> Unit,
 ) {
     private val view = TextView(context).apply {
         gravity = Gravity.CENTER
@@ -32,8 +33,7 @@ class FloatingMainButton(
         textSize = 13f
     }
     private val params = WindowManager.LayoutParams(
-        dp(context, model.sizeDp.toFloat()),
-        dp(context, model.sizeDp.toFloat()),
+        0, 0,
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -47,7 +47,7 @@ class FloatingMainButton(
         applyModel()
     }
 
-    /** Đưa cài đặt mới (tên, kích thước, độ mờ, chạm xuyên) lên nút đang hiển thị. */
+    /** Áp cài đặt (tên, kích thước, độ mờ, chạm xuyên) lên nút đang hiển thị. */
     fun applyModel() {
         val px = dp(context, model.sizeDp.toFloat())
         params.width = px
@@ -57,10 +57,12 @@ class FloatingMainButton(
         view.text = model.name
         view.alpha = model.alpha
         view.setBackgroundKeepPadding(OverlayUi.circle(0xCC142036.toInt(), OverlayUi.CYAN, dp(context, 2f)))
-        params.flags = if (model.passThrough) {
-            params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        } else {
+        // Đang chỉnh sửa thì luôn chạm được để kéo; ngoài ra mới áp chạm xuyên
+        val touchable = isEditable() || !model.passThrough
+        params.flags = if (touchable) {
             params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        } else {
+            params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
         if (added) runCatching { wm.updateViewLayout(view, params) }
     }
@@ -76,6 +78,11 @@ class FloatingMainButton(
         added = false
     }
 
+    /** Toạ độ chạm (màn hình) có nằm trong nút này không, dùng để không thu menu khi chạm vào nút. */
+    fun contains(rawX: Float, rawY: Float): Boolean =
+        added && rawX >= params.x && rawX <= params.x + params.width &&
+            rawY >= params.y && rawY <= params.y + params.height
+
     private var downX = 0f
     private var downY = 0f
     private var startX = 0
@@ -88,14 +95,14 @@ class FloatingMainButton(
                 downX = e.rawX; downY = e.rawY
                 startX = params.x; startY = params.y
                 moved = false
-                if (!isMenuOpen() && model.mode == PressMode.HOLD) runner.start(model, repeat = true)
+                if (!isEditable() && model.mode == PressMode.HOLD) fire(repeat = true)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - downX
                 val dy = e.rawY - downY
                 if (abs(dx) > dp(context, 6f) || abs(dy) > dp(context, 6f)) moved = true
-                if (isMenuOpen() && moved) {
+                if (isEditable() && moved) {
                     params.x = startX + dx.toInt()
                     params.y = startY + dy.toInt()
                     runCatching { wm.updateViewLayout(view, params) }
@@ -103,7 +110,7 @@ class FloatingMainButton(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (isMenuOpen()) {
+                if (isEditable()) {
                     if (moved) {
                         model.screenX = params.x
                         model.screenY = params.y
@@ -111,9 +118,9 @@ class FloatingMainButton(
                     }
                 } else {
                     when (model.mode) {
-                        PressMode.PRESS -> if (!runner.isRunning) runner.start(model, repeat = false)
+                        PressMode.PRESS -> fire(repeat = false)
                         PressMode.HOLD -> runner.stop()
-                        PressMode.RELEASE -> runner.start(model, repeat = false)
+                        PressMode.RELEASE -> fire(repeat = false)
                     }
                 }
                 return true
@@ -124,5 +131,12 @@ class FloatingMainButton(
             }
         }
         return false
+    }
+
+    private fun fire(repeat: Boolean) {
+        if (runner.isRunning && !repeat) return
+        if (!runner.start(model, repeat)) {
+            notify("“${model.name}” chưa có điểm click nào")
+        }
     }
 }

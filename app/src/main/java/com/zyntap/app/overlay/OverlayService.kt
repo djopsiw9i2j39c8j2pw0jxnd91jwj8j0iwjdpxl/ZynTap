@@ -9,13 +9,15 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
-import android.widget.LinearLayout
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.zyntap.app.R
 import com.zyntap.app.data.AdbInput
@@ -24,19 +26,23 @@ import com.zyntap.app.overlay.OverlayUi.setBackgroundKeepPadding
 
 /**
  * Dịch vụ nổi của ZynTap:
- *  - Tay cầm nhỏ ở mép trái: vuốt sang phải (hoặc chạm) để mở menu.
- *  - Menu có 2 tab: "Nút Main" và "Đặt điểm".
- *  - Các nút Main nổi trên màn hình, chạy chuỗi điểm bằng ADB.
+ *  - Tay cầm nhỏ ở mép trái: chạm hoặc vuốt để mở menu.
+ *  - Menu cố định kích thước, tab dọc bên trái, kéo được theo thanh đầu.
+ *  - "−" thu menu thành thanh nhỏ (logo, tên, −, ×); chạm ra ngoài menu cũng thu lại.
+ *  - Các nút Main nổi trên màn hình; khi menu mở rộng thì kéo được để sắp xếp.
  */
 class OverlayService : Service() {
 
     private lateinit var wm: WindowManager
+    private lateinit var runner: MacroRunner
+    private val main = Handler(Looper.getMainLooper())
+
     private var handleView: View? = null
+    private var panelFrame: PanelFrame? = null
     private var panelView: View? = null
-    private var panel: PanelFrame? = null
+    private var panelParams: WindowManager.LayoutParams? = null
     private var pin: PickPin? = null
     private val buttons = mutableListOf<FloatingMainButton>()
-    private lateinit var runner: MacroRunner
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,25 +50,26 @@ class OverlayService : Service() {
         super.onCreate()
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         startForegroundWithNotification()
+        OverlayFocus.listener = { focusable -> setPanelFocusable(focusable) }
         runner = MacroRunner(
             tap = { x, y -> AdbInput.tap(this, x, y) },
             pixelFor = { p -> pixel(p) },
+            onError = { toast(it) },
         )
         MacroStore.load(this).forEach { addFloating(it) }
         showHandle()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> stopSelf()
-            else -> if (handleView == null) showHandle()
-        }
+        if (intent?.action == ACTION_STOP) stopSelf()
+        else if (handleView == null && panelView == null) showHandle()
         return START_STICKY
     }
 
     override fun onDestroy() {
         runner.stop()
         removeAllViews()
+        OverlayFocus.listener = null
         AdbInput.disconnect(this)
         super.onDestroy()
     }
@@ -102,18 +109,16 @@ class OverlayService : Service() {
         }
     }
 
-    // ---- tay cầm ----------------------------------------------------------
-
     private fun overlayType(): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
 
+    // ---- tay cầm ----------------------------------------------------------
+
     private fun showHandle() {
         if (handleView != null) return
-        val w = dp(this, 22f)
-        val h = dp(this, 64f)
         val params = WindowManager.LayoutParams(
-            w, h, overlayType(),
+            dp(this, 22f), dp(this, 64f), overlayType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
@@ -123,11 +128,10 @@ class OverlayService : Service() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundKeepPadding(OverlayUi.rounded(OverlayUi.SURFACE, dp(this@OverlayService, 12f).toFloat(), OverlayUi.CYAN, dp(this@OverlayService, 1f)))
             setPadding(dp(this@OverlayService, 3f), dp(this@OverlayService, 10f), dp(this@OverlayService, 3f), dp(this@OverlayService, 10f))
-        }
-        // Chạm hoặc vuốt sang phải đều mở menu
-        handle.setOnTouchListener { _, e ->
-            if (e.action == MotionEvent.ACTION_UP) openPanel()
-            true
+            setOnTouchListener { _, e ->
+                if (e.action == MotionEvent.ACTION_UP) openPanel()
+                true
+            }
         }
         handleView = handle
         runCatching { wm.addView(handle, params) }
@@ -144,47 +148,107 @@ class OverlayService : Service() {
         if (panelView != null) return
         hideHandle()
 
+        val params = WindowManager.LayoutParams(
+            dp(this, EXPANDED_W_DP), dp(this, EXPANDED_H_DP), overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.START or Gravity.TOP
+            x = dp(this@OverlayService, 12f)
+            y = dp(this@OverlayService, 80f)
+        }
+        panelParams = params
+
         val frame = PanelFrame(
             context = this,
             tabNames = listOf("Nút Main", "Đặt điểm"),
             contentFor = { index -> contentFor(index) },
-            onCollapse = { closePanel() },
+            onCollapsedChanged = { collapsed -> applyMode(collapsed) },
             onCloseConfirmed = { stopSelf() },
+            attachDrag = { v -> attachDrag(v) },
         )
-        panel = frame
+        panelFrame = frame
 
-        val screenW = resources.displayMetrics.widthPixels
-        val panelW = (screenW * 0.82f).toInt().coerceAtMost(dp(this, 340f))
-        val params = WindowManager.LayoutParams(
-            panelW,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            x = dp(this@OverlayService, 8f)
-        }
-
-        // Chạm ra ngoài menu -> thu menu về tay cầm (chạm xuyên vẫn xuống app bên dưới)
+        // Chạm ra ngoài menu mở rộng -> thu thành thanh (trừ khi chạm vào nút Main hoặc ghim)
         frame.root.setOnTouchListener { _, e ->
-            if (e.action == MotionEvent.ACTION_OUTSIDE) closePanel()
+            if (e.action == MotionEvent.ACTION_OUTSIDE && !frame.isCollapsed) {
+                if (!touchesOverlayElement(e.rawX, e.rawY)) frame.setCollapsed(true)
+            }
             false
         }
 
         panelView = frame.root
         runCatching { wm.addView(frame.root, params) }
+        buttons.forEach { it.applyModel() }
     }
 
-    private fun closePanel() {
-        pin?.cancel()
-        pin = null
+    private fun applyMode(collapsed: Boolean) {
+        val p = panelParams ?: return
+        if (collapsed) {
+            cancelPick()
+            p.width = WindowManager.LayoutParams.WRAP_CONTENT
+            p.height = WindowManager.LayoutParams.WRAP_CONTENT
+            p.flags = p.flags and WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH.inv()
+        } else {
+            p.width = dp(this, EXPANDED_W_DP)
+            p.height = dp(this, EXPANDED_H_DP)
+            p.flags = p.flags or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        }
+        panelView?.let { runCatching { wm.updateViewLayout(it, p) } }
+        buttons.forEach { it.applyModel() }
+    }
+
+    /** Bật/tắt lấy tiêu điểm cho menu để bàn phím hiện được. */
+    private fun setPanelFocusable(focusable: Boolean) {
+        val p = panelParams ?: return
+        val view = panelView ?: return
+        p.flags = if (focusable) {
+            p.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            p.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+        runCatching { wm.updateViewLayout(view, p) }
+    }
+
+    /** Kéo cả menu (hoặc thanh thu gọn) bằng thanh đầu; giữ trong màn hình. */
+    private fun attachDrag(v: View) {
+        var downX = 0f
+        var downY = 0f
+        var startX = 0
+        var startY = 0
+        v.setOnTouchListener { _, e ->
+            val p = panelParams ?: return@setOnTouchListener false
+            val view = panelView ?: return@setOnTouchListener false
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX; downY = e.rawY
+                    startX = p.x; startY = p.y
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val maxX = (resources.displayMetrics.widthPixels - view.width).coerceAtLeast(0)
+                    val maxY = (resources.displayMetrics.heightPixels - view.height).coerceAtLeast(0)
+                    p.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, maxX)
+                    p.y = (startY + (e.rawY - downY).toInt()).coerceIn(0, maxY)
+                    runCatching { wm.updateViewLayout(view, p) }
+                }
+            }
+            true
+        }
+    }
+
+    private fun touchesOverlayElement(rawX: Float, rawY: Float): Boolean =
+        buttons.any { it.contains(rawX, rawY) } || (pin?.contains(rawX, rawY) == true)
+
+    private fun isExpanded(): Boolean = panelFrame?.let { !it.isCollapsed } ?: false
+
+    private fun closePanelWindow() {
+        cancelPick()
         panelView?.let { runCatching { wm.removeView(it) } }
         panelView = null
-        panel = null
-        showHandle()
+        panelFrame = null
+        panelParams = null
     }
 
     private fun contentFor(index: Int): View = if (index == 0) {
@@ -201,6 +265,7 @@ class OverlayService : Service() {
         override fun addButton() {
             val b = MainButton(name = "Main ${buttons.size + 1}", screenX = 120, screenY = 300)
             addFloating(b)
+            buttons.forEach { it.applyModel() }
             saveAll()
         }
 
@@ -228,13 +293,17 @@ class OverlayService : Service() {
     }
 
     private val pointsHost = object : PointsHost {
-        override fun startPick(onPicked: (fx: Float, fy: Float) -> Unit) {
-            pin?.cancel()
-            pin = PickPin(this@OverlayService, wm) { fx, fy ->
+        override fun startPick(initialX: Int, initialY: Int, onPicked: (px: Int, py: Int) -> Unit) {
+            cancelPick()
+            val p = PickPin(this@OverlayService, wm, initialX, initialY) { px, py ->
                 pin = null
-                onPicked(fx, fy)
-            }.also { it.show() }
+                onPicked(px, py)
+            }
+            pin = p
+            p.show()
         }
+
+        override fun cancelPick() = this@OverlayService.cancelPick()
 
         override fun pointsChanged(button: MainButton) {
             saveAll()
@@ -242,6 +311,11 @@ class OverlayService : Service() {
 
         override fun screenSize(): Pair<Int, Int> =
             resources.displayMetrics.widthPixels to resources.displayMetrics.heightPixels
+    }
+
+    private fun cancelPick() {
+        pin?.cancel()
+        pin = null
     }
 
     // ---- nút Main ---------------------------------------------------------
@@ -252,8 +326,9 @@ class OverlayService : Service() {
             wm = wm,
             model = model,
             runner = runner,
-            isMenuOpen = { panelView != null },
+            isEditable = { isExpanded() },
             onMoved = { saveAll() },
+            notify = { toast(it) },
         )
         buttons.add(fb)
         fb.show()
@@ -265,17 +340,22 @@ class OverlayService : Service() {
         return (p.fx * w).toInt() to (p.fy * h).toInt()
     }
 
+    private fun toast(message: String) {
+        main.post { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
+    }
+
     private fun removeAllViews() {
-        pin?.cancel()
+        cancelPick()
         buttons.forEach { it.hide() }
         hideHandle()
-        panelView?.let { runCatching { wm.removeView(it) } }
-        panelView = null
+        closePanelWindow()
     }
 
     companion object {
         const val ACTION_STOP = "com.zyntap.app.overlay.STOP"
         private const val NOTIF_ID = 1001
+        private const val EXPANDED_W_DP = 340f
+        private const val EXPANDED_H_DP = 470f
 
         fun start(context: Context) {
             val intent = Intent(context, OverlayService::class.java)

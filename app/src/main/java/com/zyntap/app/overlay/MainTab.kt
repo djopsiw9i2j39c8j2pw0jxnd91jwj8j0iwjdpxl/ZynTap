@@ -88,6 +88,11 @@ class MainTab(
         addView(back)
 
         val nameBox = EditText(context).apply {
+            keyboardAware()
+            setOnTouchListener { v, e ->
+                if (e.action == android.view.MotionEvent.ACTION_UP) (v as EditText).focusWithKeyboard()
+                false
+            }
             setText(b.name)
             hint = "Tên nút"
             setTextColor(OverlayUi.TEXT)

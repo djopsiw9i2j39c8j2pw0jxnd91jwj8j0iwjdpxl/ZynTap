@@ -12,19 +12,21 @@ import com.zyntap.app.overlay.OverlayUi.dp
 import kotlin.math.abs
 
 /**
- * Ghim ngắm để chọn điểm: kéo ghim tới đâu thì đầu nhọn của ghim là toạ độ.
- * Chạm (không kéo) vào ghim lần nữa để chốt toạ độ; ghim sẽ tự biến mất.
+ * Icon ghim toạ độ, nền trong suốt 100%.
+ * Đầu nhọn của ghim là toạ độ. Kéo để di chuyển; chạm (không kéo) để chốt.
  */
 class PickPin(
     private val context: Context,
     private val wm: WindowManager,
-    private val onPicked: (fx: Float, fy: Float) -> Unit,
+    initialX: Int,
+    initialY: Int,
+    private val onPicked: (px: Int, py: Int) -> Unit,
 ) {
-    private val size = dp(context, 44f)
+    private val size = dp(context, 36f)
     private val view = ImageView(context).apply {
         setImageResource(R.drawable.ic_lucide_map_pin)
-        setBackgroundColor(0x66000000)
-        setPadding(dp(context, 6f), dp(context, 6f), dp(context, 6f), dp(context, 6f))
+        background = null
+        scaleType = ImageView.ScaleType.FIT_CENTER
     }
     private val params = WindowManager.LayoutParams(
         size, size,
@@ -34,8 +36,8 @@ class PickPin(
         PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.START or Gravity.TOP
-        x = context.resources.displayMetrics.widthPixels / 2 - size / 2
-        y = context.resources.displayMetrics.heightPixels / 2 - size / 2
+        x = initialX - size / 2
+        y = initialY - tipOffset()
     }
 
     private var downX = 0f
@@ -43,6 +45,7 @@ class PickPin(
     private var startX = 0
     private var startY = 0
     private var moved = false
+    private var added = false
 
     init {
         view.setOnTouchListener { _, e ->
@@ -55,7 +58,7 @@ class PickPin(
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX
                     val dy = e.rawY - downY
-                    if (abs(dx) > dp(context, 6f) || abs(dy) > dp(context, 6f)) moved = true
+                    if (abs(dx) > dp(context, 4f) || abs(dy) > dp(context, 4f)) moved = true
                     if (moved) {
                         params.x = startX + dx.toInt()
                         params.y = startY + dy.toInt()
@@ -68,21 +71,27 @@ class PickPin(
         }
     }
 
+    /** Vị trí đầu nhọn tính từ đỉnh trên của icon (icon 24x24, đầu nhọn ở y = 22). */
+    private fun tipOffset(): Int = size * 22 / 24
+
     fun show() {
-        runCatching { wm.addView(view, params) }
+        if (added) return
+        runCatching { wm.addView(view, params) }.onSuccess { added = true }
     }
 
     fun cancel() {
+        if (!added) return
         runCatching { wm.removeView(view) }
+        added = false
     }
 
-    /** Đầu nhọn của ghim (giữa cạnh dưới) đổi ra tỉ lệ màn hình. */
+    fun contains(rawX: Float, rawY: Float): Boolean =
+        added && rawX >= params.x && rawX <= params.x + size && rawY >= params.y && rawY <= params.y + size
+
     private fun confirm() {
-        val w = context.resources.displayMetrics.widthPixels.toFloat()
-        val h = context.resources.displayMetrics.heightPixels.toFloat()
-        val tipX = params.x + size / 2f
-        val tipY = params.y + size.toFloat()
+        val tipX = params.x + size / 2
+        val tipY = params.y + tipOffset()
         cancel()
-        onPicked((tipX / w).coerceIn(0f, 1f), (tipY / h).coerceIn(0f, 1f))
+        onPicked(tipX, tipY)
     }
 }

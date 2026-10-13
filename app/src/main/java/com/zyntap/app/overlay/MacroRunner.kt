@@ -1,32 +1,30 @@
 package com.zyntap.app.overlay
 
-import android.os.Handler
-import android.os.Looper
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Chạy chuỗi điểm của một nút Main.
- *  - Nhấn : chạy lần lượt các điểm, mỗi điểm cách nhau [MainButton.delayMs], rồi dừng.
- *  - Giữ  : đang giữ nút thì lặp lại cả chuỗi liên tục cho tới khi thả.
- *  - Thả  : chỉ chạy chuỗi đúng một lần khi thả nút.
+ *  - Nhấn : chạy các điểm lần lượt, cách nhau delay, rồi dừng.
+ *  - Giữ  : chạy lặp liên tục cho tới khi gọi stop() (thả tay).
+ *  - Thả  : chạy đúng một lần khi thả tay.
  *
- * [tap] nhận toạ độ pixel (x, y) và phải thực hiện cú chạm thật (qua ADB shell).
+ * [tap] trả về null nếu thành công, hoặc thông báo lỗi; khi có lỗi chuỗi sẽ dừng.
  */
 class MacroRunner(
-    private val tap: (x: Int, y: Int) -> Unit,
+    private val tap: (x: Int, y: Int) -> String?,
     private val pixelFor: (TapPoint) -> Pair<Int, Int>,
+    private val onError: (String) -> Unit,
 ) {
-    private val main = Handler(Looper.getMainLooper())
     private val running = AtomicBoolean(false)
-    private var worker: Thread? = null
+    @Volatile private var worker: Thread? = null
 
     val isRunning: Boolean get() = running.get()
 
-    /** Bắt đầu chạy chuỗi. Với PRESS/RELEASE chạy một lần; HOLD chạy lặp đến khi gọi [stop]. */
-    fun start(button: MainButton, repeat: Boolean) {
-        if (button.points.isEmpty()) return
-        if (!running.compareAndSet(false, true)) return
-        val points = button.points.toList()
+    /** Trả về false nếu không có điểm nào hợp lệ để chạy. */
+    fun start(button: MainButton, repeat: Boolean): Boolean {
+        val points = button.points.filter { it.isSet }.toList()
+        if (points.isEmpty()) return false
+        if (!running.compareAndSet(false, true)) return true
         val delay = button.delayMs.coerceAtLeast(0L)
         worker = Thread {
             try {
@@ -34,7 +32,11 @@ class MacroRunner(
                     for (p in points) {
                         if (!running.get()) break
                         val (x, y) = pixelFor(p)
-                        tap(x, y)
+                        val error = tap(x, y)
+                        if (error != null) {
+                            onError(error)
+                            return@Thread
+                        }
                         if (delay > 0) Thread.sleep(delay)
                     }
                 } while (repeat && running.get())
@@ -44,6 +46,7 @@ class MacroRunner(
                 running.set(false)
             }
         }.also { it.isDaemon = true; it.start() }
+        return true
     }
 
     fun stop() {

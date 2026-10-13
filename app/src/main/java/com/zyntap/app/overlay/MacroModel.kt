@@ -17,10 +17,16 @@ enum class PressMode(val label: String) {
 }
 
 /**
- * Điểm chạm. Toạ độ lưu theo TỈ LỆ (0..1) của màn hình, nên khi xoay màn hình
- * vẫn đúng vị trí tương đối; lúc chạy sẽ quy đổi về pixel theo hướng hiện tại.
+ * Một điểm click. Toạ độ lưu theo TỈ LỆ (0..1) của màn hình để xoay màn hình vẫn đúng.
+ * fx < 0 hoặc fy < 0 nghĩa là chưa đặt toạ độ (điểm đó sẽ bị bỏ qua khi chạy).
  */
-data class TapPoint(val fx: Float, val fy: Float)
+data class TapPoint(
+    var name: String = "Click",
+    var fx: Float = -1f,
+    var fy: Float = -1f,
+) {
+    val isSet: Boolean get() = fx >= 0f && fy >= 0f
+}
 
 data class MainButton(
     val id: String = UUID.randomUUID().toString(),
@@ -35,7 +41,7 @@ data class MainButton(
     val points: MutableList<TapPoint> = mutableListOf(),
 )
 
-/** Lưu danh sách nút Main vào SharedPreferences dưới dạng JSON (không cần thư viện ngoài). */
+/** Lưu danh sách nút Main vào SharedPreferences dưới dạng JSON. */
 object MacroStore {
     private const val PREFS = "zyntap_overlay"
     private const val KEY = "main_buttons"
@@ -68,7 +74,9 @@ object MacroStore {
         put("screenX", b.screenX)
         put("screenY", b.screenY)
         val pts = JSONArray()
-        b.points.forEach { pts.put(JSONObject().put("fx", it.fx.toDouble()).put("fy", it.fy.toDouble())) }
+        b.points.forEach {
+            pts.put(JSONObject().put("name", it.name).put("fx", it.fx.toDouble()).put("fy", it.fy.toDouble()))
+        }
         put("points", pts)
     }
 
@@ -76,7 +84,11 @@ object MacroStore {
         val pts = o.optJSONArray("points") ?: JSONArray()
         val points = MutableList(pts.length()) { i ->
             val p = pts.getJSONObject(i)
-            TapPoint(p.getDouble("fx").toFloat(), p.getDouble("fy").toFloat())
+            TapPoint(
+                name = p.optString("name", "Click"),
+                fx = p.optDouble("fx", -1.0).toFloat(),
+                fy = p.optDouble("fy", -1.0).toFloat(),
+            )
         }
         return MainButton(
             id = o.optString("id", UUID.randomUUID().toString()),
