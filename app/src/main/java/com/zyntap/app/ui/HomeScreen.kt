@@ -19,8 +19,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,25 +54,30 @@ private const val COLUMNS = 4
 
 @Composable
 fun HomeScreen(vm: MainViewModel) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 8.dp, bottom = 28.dp),
-    ) {
-        StatusCard(paired = vm.isPaired, onClick = vm::openActivate)
-        Spacer(Modifier.height(14.dp))
-        ActivateButton(onClick = vm::openActivate)
-        Spacer(Modifier.height(18.dp))
-        AppsCard(vm)
-        Spacer(Modifier.height(28.dp))
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 8.dp, bottom = 16.dp),
+        ) {
+            StatusCard(paired = vm.isPaired, onClick = vm::openActivate)
+            Spacer(Modifier.height(14.dp))
+            ActivateButton(onClick = vm::openActivate)
+            Spacer(Modifier.height(18.dp))
+            AppsCard(vm)
+        }
         Text(
             text = "ZynTap  •  Phiên bản ${BuildConfig.VERSION_NAME}",
             color = Zyn.TextDim,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(vertical = 14.dp),
         )
     }
 }
@@ -112,9 +119,16 @@ private fun ActivateButton(onClick: () -> Unit) {
             .clip(shape)
             .background(Brush.horizontalGradient(listOf(Color(0xFF1F5CF0), Color(0xFF12A0EC))))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(start = 20.dp, end = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Text(
+            text = "Kích hoạt chức năng app",
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+        )
         Box(
             modifier = Modifier
                 .size(38.dp)
@@ -123,13 +137,6 @@ private fun ActivateButton(onClick: () -> Unit) {
         ) {
             Icon(Lucide.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
         }
-        Spacer(Modifier.width(14.dp))
-        Text(
-            text = "Kích hoạt chức năng app",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 
