@@ -7,7 +7,7 @@ plugins {
 // ---- Phiên bản -------------------------------------------------------------
 // Lấy từ gradle.properties (appVersion) hoặc từ dòng lệnh: -PappVersion=1.00.02
 val appVersionName: String = (project.findProperty("appVersion") as String?)?.trim().orEmpty()
-    .ifEmpty { "1.00.01" }
+    .ifEmpty { "1.00.03" }
 
 // "1.00.01" -> 1_000_001 ; "1.02.10" -> 1_002_010 (luôn tăng khi version tăng)
 fun versionCodeFrom(name: String): Int {
@@ -85,4 +85,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
+
+    // TLS (Conscrypt của Google) — cần cho ghép nối ADB Wi-Fi bằng TLS-PSK
+    implementation("org.conscrypt:conscrypt-android:2.5.2")
 }
